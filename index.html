@@ -1,0 +1,634 @@
+
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { Lock, Smartphone, Clock, Trophy, Play, Users, BookOpen, ArrowRight, Shield, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+
+const PrivacyGuardianGame = () => {
+  const [gameState, setGameState] = useState('menu'); // menu, phone-lock, apps, app-password, result
+  const [score, setScore] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(180);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [hints, setHints] = useState([]);
+  const [unlockedApps, setUnlockedApps] = useState([]);
+  const [currentApp, setCurrentApp] = useState(null);
+  const [phoneUnlocked, setPhoneUnlocked] = useState(false);
+  const [phoneUnlockTime, setPhoneUnlockTime] = useState(null);
+  const [showHint, setShowHint] = useState(false);
+  const [appTimeLeft, setAppTimeLeft] = useState(0);
+  const [resultStories, setResultStories] = useState([]);
+  const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
+
+  // パスワードデータ
+  const phoneLockData = {
+    password: '12345',
+    initialHints: [
+      '使用されている数字は1,2,3,4,5のみ',
+      'このユーザーは簡単なパスワードを好む傾向がある',
+      '連続した数字のパターンが多い'
+    ],
+    timedHints: [
+      { time: 150, hint: '最初の数字は1から始まる' },
+      { time: 120, hint: '昇順に並んでいる可能性が高い' },
+      { time: 60, hint: '答えの最初の2文字: 12...' },
+      { time: 30, hint: '答え: 123...' }
+    ]
+  };
+
+  const apps = [
+    { id: 1, name: 'ブロスタ', icon: '🎮', difficulty: 'easy', time: 20, score: 20, password: '2468', hints: ['偶数のみ使用', '2から始まる', '昇順の偶数'] },
+    { id: 2, name: 'モンスト', icon: '🎯', difficulty: 'easy', time: 15, score: 20, password: '9999', hints: ['同じ数字の繰り返し', '最大の1桁の数字', '9が4つ'] },
+    { id: 3, name: 'Instagram', icon: '📷', difficulty: 'medium', time: 30, score: 45, password: '0630', hints: ['誕生日かもしれない', '月と日の組み合わせ', '6月30日'] },
+    { id: 4, name: 'X (Twitter)', icon: '🐦', difficulty: 'medium', time: 25, score: 45, password: 'pass123', hints: ['英数字混合', 'passという単語を含む', 'pass+数字3桁'] },
+    { id: 5, name: 'みずほ銀行', icon: '🏦', difficulty: 'hard', time: 50, score: 60, password: 'mizu2024', hints: ['銀行名のローマ字を含む', '年号を含む可能性', 'mizu+西暦'] },
+    { id: 6, name: 'SBI証券', icon: '💰', difficulty: 'hard', time: 45, score: 60, password: 'sbi54321', hints: ['会社名の略称を使用', '数字は降順', 'sbi+54321'] }
+  ];
+
+  // タイマー管理
+  useEffect(() => {
+    if (gameState === 'phone-lock' || gameState === 'apps') {
+      if (timeLeft <= 0) {
+        endGame();
+        return;
+      }
+      const timer = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            endGame();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [gameState, timeLeft]);
+
+  // アプリ解読タイマー
+  useEffect(() => {
+    if (gameState === 'app-password' && appTimeLeft > 0) {
+      const timer = setInterval(() => {
+        setAppTimeLeft(prev => prev - 1);
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [gameState, appTimeLeft]);
+
+  // 段階的ヒント表示
+  useEffect(() => {
+    if (gameState === 'phone-lock') {
+      phoneLockData.timedHints.forEach(timedHint => {
+        if (timeLeft === timedHint.time) {
+          setHints(prev => [...prev, timedHint.hint]);
+        }
+      });
+    }
+  }, [timeLeft, gameState]);
+
+  // アプリ解読のヒント表示
+  useEffect(() => {
+    if (gameState === 'app-password' && currentApp) {
+      const totalTime = currentApp.time;
+      const elapsed = totalTime - appTimeLeft;
+      const progress = elapsed / totalTime;
+
+      if (progress >= 0.5 && currentApp.hints[1] && !hints.includes(currentApp.hints[1])) {
+        setHints(prev => [...prev, currentApp.hints[1]]);
+      }
+      if (progress >= 0.75 && currentApp.hints[2] && !hints.includes(currentApp.hints[2])) {
+        setHints(prev => [...prev, currentApp.hints[2]]);
+      }
+    }
+  }, [appTimeLeft, gameState, currentApp]);
+
+  const startGame = () => {
+    setGameState('phone-lock');
+    setScore(0);
+    setTimeLeft(180);
+    setCurrentPassword('');
+    setHints(phoneLockData.initialHints);
+    setUnlockedApps([]);
+    setPhoneUnlocked(false);
+    setPhoneUnlockTime(null);
+  };
+
+  const checkPhonePassword = () => {
+    if (currentPassword === phoneLockData.password) {
+      const baseScore = 30;
+      const timeBonus = timeLeft > 165 ? 10 : timeLeft > 150 ? Math.floor((timeLeft - 150) / 1.5) : 0;
+      const totalScore = baseScore + timeBonus;
+      setScore(totalScore);
+      setPhoneUnlocked(true);
+      setPhoneUnlockTime(180 - timeLeft);
+      setGameState('apps');
+      setCurrentPassword('');
+    } else {
+      alert('パスワードが間違っています');
+      setCurrentPassword('');
+    }
+  };
+
+  const selectApp = (app) => {
+    setCurrentApp(app);
+    setGameState('app-password');
+    setAppTimeLeft(app.time);
+    setHints([app.hints[0]]);
+    setCurrentPassword('');
+  };
+
+  const checkAppPassword = () => {
+    if (currentPassword.toLowerCase() === currentApp.password.toLowerCase()) {
+      setScore(prev => prev + currentApp.score);
+      setUnlockedApps(prev => [...prev, currentApp]);
+      setGameState('apps');
+      setCurrentApp(null);
+      setCurrentPassword('');
+    } else {
+      alert('パスワードが間違っています');
+      setCurrentPassword('');
+    }
+  };
+
+  const endGame = () => {
+    // 悪用ストーリー生成
+    const stories = [];
+    if (unlockedApps.some(app => app.name === 'みずほ銀行')) {
+      stories.push({
+        text: 'みずほ銀行のアカウントからあなたの口座から50万円を不正送金。攻撃者は高級腕時計を購入しました。',
+        icon: '🏦',
+        severity: 'critical'
+      });
+    }
+    if (unlockedApps.some(app => app.name === 'SBI証券')) {
+      stories.push({
+        text: 'SBI証券のアカウントで保有株を勝手に売却。100万円以上の損失が発生しました。',
+        icon: '💰',
+        severity: 'critical'
+      });
+    }
+    if (unlockedApps.some(app => app.name === 'Instagram')) {
+      stories.push({
+        text: 'Instagramアカウントが乗っ取られ、フォロワーに詐欺キャンペーンのDMを一斉送信されました。',
+        icon: '📷',
+        severity: 'high'
+      });
+    }
+    if (unlockedApps.some(app => app.name === 'X (Twitter)')) {
+      stories.push({
+        text: 'X (Twitter)アカウントで不適切な投稿が拡散。あなたの社会的信用が失墜しました。',
+        icon: '🐦',
+        severity: 'high'
+      });
+    }
+    if (unlockedApps.some(app => app.name === 'ブロスタ')) {
+      stories.push({
+        text: 'ブロスタのアカウントが第三者に売却され、長年のプレイデータが失われました。',
+        icon: '🎮',
+        severity: 'medium'
+      });
+    }
+    if (unlockedApps.some(app => app.name === 'モンスト')) {
+      stories.push({
+        text: 'モンストのレアキャラクターがすべて削除され、課金アイテムも使い果たされました。',
+        icon: '🎯',
+        severity: 'medium'
+      });
+    }
+
+    if (stories.length === 0) {
+      stories.push({
+        text: 'アカウントは守られました。しかし、より強固なパスワードを設定することをお勧めします。',
+        icon: '✅',
+        severity: 'safe'
+      });
+    }
+
+    setResultStories(stories);
+    setCurrentStoryIndex(0);
+    setGameState('result');
+  };
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // メニュー画面
+  if (gameState === 'menu') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-gray-800 rounded-3xl shadow-2xl p-8 border border-gray-700">
+          <div className="text-center mb-8">
+            <div className="flex justify-center mb-4">
+              <Shield className="w-20 h-20 text-blue-400" />
+            </div>
+            <h1 className="text-3xl font-bold text-white mb-2">Privacy Guardian</h1>
+            <p className="text-gray-400 text-sm">パスワードセキュリティ教育ゲーム</p>
+          </div>
+
+          <div className="space-y-4">
+            <button
+              onClick={startGame}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-xl flex items-center justify-center space-x-3 transition"
+            >
+              <Play className="w-5 h-5" />
+              <span>シングルプレイ開始</span>
+            </button>
+
+            <button
+              className="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-4 px-6 rounded-xl flex items-center justify-center space-x-3 transition opacity-50 cursor-not-allowed"
+              disabled
+            >
+              <Users className="w-5 h-5" />
+              <span>マルチプレイ（準備中）</span>
+            </button>
+
+            <button
+              className="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-3 px-6 rounded-xl flex items-center justify-center space-x-3 transition"
+            >
+              <BookOpen className="w-5 h-5" />
+              <span>ルール説明</span>
+            </button>
+
+            <button
+              className="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-3 px-6 rounded-xl flex items-center justify-center space-x-3 transition"
+            >
+              <Trophy className="w-5 h-5" />
+              <span>スコアボード</span>
+            </button>
+          </div>
+
+          <div className="mt-8 p-4 bg-gray-900 rounded-lg border border-gray-700">
+            <p className="text-gray-400 text-xs text-center">
+              このゲームは教育目的で作成されています。
+              実際の不正アクセスは犯罪です。
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // スマホロック画面
+  if (gameState === 'phone-lock') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex items-center justify-center p-4">
+        <div className="max-w-md w-full">
+          {/* タイマー表示 */}
+          <div className="bg-gray-800 rounded-xl p-4 mb-4 border border-gray-700">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Clock className="w-5 h-5 text-blue-400" />
+                <span className="text-white font-bold">残り時間</span>
+              </div>
+              <span className="text-2xl font-bold text-white">{formatTime(timeLeft)}</span>
+            </div>
+          </div>
+
+          {/* iPhoneロック画面風UI */}
+          <div className="bg-gray-900 rounded-3xl shadow-2xl p-8 border border-gray-700">
+            <div className="text-center mb-8">
+              <Lock className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-white mb-2">iPhoneのロックを解除</h2>
+              <p className="text-gray-400 text-sm">5桁のパスワードを入力してください</p>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex justify-center space-x-2 mb-4">
+                {[...Array(5)].map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-12 h-12 rounded-lg border-2 flex items-center justify-center text-xl font-bold ${
+                      currentPassword[i]
+                        ? 'bg-blue-600 border-blue-500 text-white'
+                        : 'bg-gray-800 border-gray-600 text-gray-500'
+                    }`}
+                  >
+                    {currentPassword[i] || ''}
+                  </div>
+                ))}
+              </div>
+
+              <input
+                type="text"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value.slice(0, 5))}
+                onKeyPress={(e) => e.key === 'Enter' && currentPassword.length === 5 && checkPhonePassword()}
+                className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none text-center text-xl"
+                placeholder="パスワードを入力"
+                maxLength={5}
+              />
+            </div>
+
+            <button
+              onClick={checkPhonePassword}
+              disabled={currentPassword.length !== 5}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-xl transition"
+            >
+              解除する
+            </button>
+
+            {/* ヒント表示 */}
+            <div className="mt-6 bg-gray-800 rounded-lg p-4 border border-gray-700">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-blue-400 font-bold text-sm">💡 ヒント</span>
+                <span className="text-gray-500 text-xs">{hints.length}個</span>
+              </div>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {hints.map((hint, index) => (
+                  <div key={index} className="text-gray-300 text-sm bg-gray-900 p-2 rounded">
+                    • {hint}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 text-center">
+            <div className="inline-flex items-center space-x-2 bg-gray-800 px-4 py-2 rounded-lg border border-gray-700">
+              <Trophy className="w-4 h-4 text-yellow-400" />
+              <span className="text-white font-bold">{score}点</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // アプリ選択画面
+  if (gameState === 'apps') {
+    const availableApps = apps.filter(app => !unlockedApps.find(u => u.id === app.id));
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex items-center justify-center p-4">
+        <div className="max-w-2xl w-full">
+          {/* タイマーとスコア */}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+              <div className="flex items-center space-x-2">
+                <Clock className="w-5 h-5 text-blue-400" />
+                <span className="text-white font-bold">{formatTime(timeLeft)}</span>
+              </div>
+            </div>
+            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+              <div className="flex items-center space-x-2">
+                <Trophy className="w-5 h-5 text-yellow-400" />
+                <span className="text-white font-bold">{score}点</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-gray-800 rounded-3xl shadow-2xl p-6 border border-gray-700">
+            <div className="text-center mb-6">
+              <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
+              <h2 className="text-2xl font-bold text-white mb-2">スマホ解除成功！</h2>
+              <p className="text-gray-400 text-sm">アプリを選択してパスワードを解読しましょう</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {availableApps.map(app => (
+                <button
+                  key={app.id}
+                  onClick={() => selectApp(app)}
+                  className="bg-gray-900 hover:bg-gray-700 p-6 rounded-xl border border-gray-600 transition group"
+                >
+                  <div className="text-5xl mb-3">{app.icon}</div>
+                  <div className="text-white font-bold mb-1">{app.name}</div>
+                  <div className="text-xs text-gray-400 mb-2">
+                    {app.difficulty === 'easy' ? '易' : app.difficulty === 'medium' ? '中' : '難'}
+                    {' '}• {app.time}秒 • {app.score}点
+                  </div>
+                  <div className="text-blue-400 text-xs group-hover:text-blue-300">
+                    解読する →
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {availableApps.length === 0 && (
+              <div className="text-center py-8">
+                <p className="text-gray-400 mb-4">すべてのアプリを解読しました！</p>
+                <button
+                  onClick={endGame}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl"
+                >
+                  結果を見る
+                </button>
+              </div>
+            )}
+
+            <div className="mt-6 bg-gray-900 rounded-lg p-4 border border-gray-700">
+              <div className="text-sm text-gray-400">
+                解読済み: {unlockedApps.length}/{apps.length}アプリ
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {unlockedApps.map(app => (
+                  <span key={app.id} className="text-2xl">{app.icon}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // アプリパスワード解読画面
+  if (gameState === 'app-password' && currentApp) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex items-center justify-center p-4">
+        <div className="max-w-md w-full">
+          {/* タイマー表示 */}
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="bg-gray-800 rounded-xl p-3 border border-gray-700">
+              <div className="text-xs text-gray-400 mb-1">全体</div>
+              <div className="text-white font-bold">{formatTime(timeLeft)}</div>
+            </div>
+            <div className="bg-gray-800 rounded-xl p-3 border border-gray-700">
+              <div className="text-xs text-gray-400 mb-1">アプリ</div>
+              <div className="text-white font-bold">{appTimeLeft}秒</div>
+            </div>
+            <div className="bg-gray-800 rounded-xl p-3 border border-gray-700">
+              <div className="text-xs text-gray-400 mb-1">スコア</div>
+              <div className="text-white font-bold">{score}点</div>
+            </div>
+          </div>
+
+          {/* アプリ解読画面 */}
+          <div className="bg-gray-900 rounded-3xl shadow-2xl p-8 border border-gray-700">
+            <div className="text-center mb-8">
+              <div className="text-6xl mb-4">{currentApp.icon}</div>
+              <h2 className="text-2xl font-bold text-white mb-2">{currentApp.name}</h2>
+              <div className="inline-block bg-gray-800 px-4 py-1 rounded-full">
+                <span className="text-blue-400 font-bold text-sm">
+                  +{currentApp.score}点
+                </span>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-gray-400 text-sm mb-2">パスワードを入力</label>
+              <input
+                type="text"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && checkAppPassword()}
+                className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none text-center text-xl"
+                placeholder="パスワード"
+              />
+            </div>
+
+            <button
+              onClick={checkAppPassword}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition mb-4"
+            >
+              解除する
+            </button>
+
+            <button
+              onClick={() => setGameState('apps')}
+              className="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-2 px-6 rounded-xl transition"
+            >
+              別のアプリを選ぶ
+            </button>
+
+            {/* ヒント表示 */}
+            <div className="mt-6 bg-gray-800 rounded-lg p-4 border border-gray-700">
+              <div className="flex items-center mb-2">
+                <span className="text-blue-400 font-bold text-sm">💡 ヒント</span>
+              </div>
+              <div className="space-y-2">
+                {hints.map((hint, index) => (
+                  <div key={index} className="text-gray-300 text-sm bg-gray-900 p-2 rounded">
+                    • {hint}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {appTimeLeft <= 10 && (
+              <div className="mt-4 bg-red-900 border border-red-700 rounded-lg p-3">
+                <div className="flex items-center space-x-2">
+                  <AlertTriangle className="w-5 h-5 text-red-400" />
+                  <span className="text-red-200 text-sm font-bold">時間切れ間近！</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 結果画面
+  if (gameState === 'result') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-red-900 to-gray-900 flex items-center justify-center p-4">
+        <div className="max-w-2xl w-full">
+          <div className="bg-gray-800 rounded-3xl shadow-2xl p-8 border border-gray-700">
+            {/* スコア表示 */}
+            <div className="text-center mb-8">
+              <Trophy className="w-20 h-20 text-yellow-400 mx-auto mb-4" />
+              <h2 className="text-3xl font-bold text-white mb-2">ゲーム終了</h2>
+              <div className="text-6xl font-bold text-white mb-4">{score}</div>
+              <p className="text-gray-400">総獲得スコア</p>
+            </div>
+
+            {/* 解読したアプリ */}
+            <div className="bg-gray-900 rounded-xl p-6 mb-6 border border-gray-700">
+              <h3 className="text-white font-bold mb-4">解読したアカウント</h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-white bg-gray-800 p-3 rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <Lock className="w-5 h-5 text-green-400" />
+                    <span>スマホロック解除</span>
+                  </div>
+                  <span className="font-bold text-green-400">+30点</span>
+                </div>
+                {unlockedApps.map(app => (
+                  <div key={app.id} className="flex items-center justify-between text-white bg-gray-800 p-3 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <span className="text-2xl">{app.icon}</span>
+                      <span>{app.name}</span>
+                    </div>
+                    <span className="font-bold text-blue-400">+{app.score}点</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 悪用ストーリー */}
+            {resultStories.length > 0 && (
+              <div className="bg-red-900 bg-opacity-30 border border-red-700 rounded-xl p-6 mb-6">
+                <div className="flex items-center space-x-2 mb-4">
+                  <AlertTriangle className="w-6 h-6 text-red-400" />
+                  <h3 className="text-white font-bold text-lg">あなたのアカウントが悪用されました</h3>
+                </div>
+                
+                <div className="space-y-4">
+                  {resultStories.map((story, index) => (
+                    <div key={index} className="bg-gray-900 bg-opacity-50 rounded-lg p-4 border border-red-800">
+                      <div className="flex items-start space-x-3">
+                        <div className="text-3xl">{story.icon}</div>
+                        <div className="flex-1">
+                          <p className="text-gray-200 text-sm leading-relaxed">{story.text}</p>
+                          <div className="mt-2">
+                            <span className={`text-xs px-2 py-1 rounded ${
+                              story.severity === 'critical' ? 'bg-red-800 text-red-200' :
+                              story.severity === 'high' ? 'bg-orange-800 text-orange-200' :
+                              story.severity === 'medium' ? 'bg-yellow-800 text-yellow-200' :
+                              'bg-green-800 text-green-200'
+                            }`}>
+                              {story.severity === 'critical' ? '重大' :
+                               story.severity === 'high' ? '高' :
+                               story.severity === 'medium' ? '中' : '安全'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 教育メッセージ */}
+            <div className="bg-blue-900 bg-opacity-30 border border-blue-700 rounded-xl p-6 mb-6">
+              <h3 className="text-blue-300 font-bold mb-3 flex items-center space-x-2">
+                <Shield className="w-5 h-5" />
+                <span>セキュリティのヒント</span>
+              </h3>
+              <ul className="space-y-2 text-sm text-gray-300">
+                <li>• 推測されにくい複雑なパスワードを使用する</li>
+                <li>• アカウントごとに異なるパスワードを設定する</li>
+                <li>• 二段階認証を有効にする</li>
+                <li>• 定期的にパスワードを変更する</li>
+                <li>• パスワード管理ツールの使用を検討する</li>
+              </ul>
+            </div>
+
+            {/* ボタン */}
+            <div className="flex gap-4">
+              <button
+                onClick={startGame}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition"
+              >
+                もう一度プレイ
+              </button>
+              <button
+                onClick={() => setGameState('menu')}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-3 px-6 rounded-xl transition"
+              >
+                メニューに戻る
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+};
+
+export default PrivacyGuardianGame;
